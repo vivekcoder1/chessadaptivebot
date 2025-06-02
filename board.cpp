@@ -1,55 +1,14 @@
 #include <iostream>
-#include "headers.h"
+#include <vector>
+#include <cstdint>
+#include <unordered_map>
+#include "maskgeneration.cpp"
+#include "header.h"
+#pragma once
 using namespace std;
 
 typedef int8_t Square;
-inline Square bitscanForward(uint64_t bb) {
-//    assert(bb != 0);
-    return __builtin_ctzll(bb);
-}
-
-inline uint64_t lsbReset(uint64_t number) {
-    return number & (number - 1);;
-}
-struct board{
-    uint64_t white_pawns;
-    uint64_t white_knights;
-    uint64_t white_bishops; 
-    uint64_t white_rooks; 
-    uint64_t white_queen; 
-    uint64_t white_king;   
-
-    uint64_t black_pawns;  
-    uint64_t black_knights;
-    uint64_t black_bishops;
-    uint64_t black_rooks;
-    uint64_t black_queen;
-    uint64_t black_king;
-    uint64_t attacked;
-    bool turn;
-    bool check;
-    //A state of 0 is white's move, a state of 1 is black's move
-    // if check==0, no check, there is check if check==1
-    uint64_t whitepieces() {
-        return white_pawns | white_knights | white_bishops | white_rooks | white_queen | white_king;
-    }
-
-    uint64_t blackpieces() {
-        return black_pawns | black_knights | black_bishops | black_rooks | black_queen | black_king;
-    }
-
-    uint64_t totboard() {
-        return whitepieces() | blackpieces();
-    }
-};
-struct Move{
-    int from;
-    int to;
-    string promotion;
-    bool operator==(const Move& other) const {
-    return from == other.from && to == other.to && promotion == other.promotion;
-}
-};
+typedef uint64_t U64;
 board initstate(){
     board initboard;
     initboard.white_pawns= 0x000000000000FF00ULL;
@@ -89,70 +48,91 @@ unordered_map<string, int> mspaceint{
     {"h8",56},  {"g8",57},  {"f8",58},  {"e8",59},  {"d8",60},  {"c8",61},  {"b8",62},  {"a8",63}
 };
 
-uint64_t setbit(uint64_t bitboard, string square){
-    return bitboard | (1ULL<<(64-mspaceint[square]));
-}
-void printboard(uint64_t bitboard){
+void printboard(U64 bitboard){
     for (int j=7;j>=0;j--){
         for (int i=0;i<8;i++){
             int square = j*8+i;
-            uint64_t temp = 1ULL<<square;
+            U64 temp = 1ULL<<square;
             if (bitboard & temp) cout<<1;
             else cout<<0;
         }
         cout<<endl;
     }
+    cout<<'\n';
 }
 vector<Move> getLegal(board state){
-    const uint64_t not_a_file = 18374403900871474942ULL;
-    const uint64_t not_h_file = 9187201950435737471ULL;
-    const uint64_t not_hg_file = 4557430888798830399ULL;
-    const uint64_t not_ab_file = 18229723555195321596ULL;
-    const uint64_t second_rank = 65280ULL;
-    const uint64_t seventh_rank = 71776119061217280ULL;
+    const U64 not_a_file = 18374403900871474942ULL;
+    const U64 not_h_file = 9187201950435737471ULL;
+    const U64 not_hg_file = 4557430888798830399ULL;
+    const U64 not_ab_file = 18229723555195321596ULL;
+    const U64 second_rank = 65280ULL;
+    const U64 seventh_rank = 71776119061217280ULL;
+    U64 empty_or_black = ~state.whitepieces();  // Allows moves to empty or enemy-occupied squares
+
     vector<Move> output;
     if (!state.turn){
         // legal moves for white
         // find legal moves of pawns
-        uint64_t occupied = ~state.totboard();
-        uint64_t tuff= ((second_rank & state.white_pawns)<<16) & occupied;
+        U64 empty = ~state.totboard();
+        U64 tuff= ((((second_rank & state.white_pawns)<<8) & empty)<<8) & empty;
         while (tuff){
             Square s= bitscanForward(tuff);
-            output.push_back(Move{s-16,s,""});
+            output.push_back(Move{s-16,s,"", 0});
             tuff=lsbReset(tuff);
         }
-        tuff=((state.white_pawns & (~seventh_rank))<<8) & occupied;
+        tuff=((state.white_pawns & (~seventh_rank))<<8) & empty;
         while (tuff){
             Square s= bitscanForward(tuff);
-            output.push_back(Move{s-8,s,""});
+            output.push_back(Move{s-8,s,"",0});
             tuff=lsbReset(tuff);
         }
         //for promotions
-        tuff=((state.white_pawns & seventh_rank)<<8) & occupied;
+        tuff=((state.white_pawns & seventh_rank)<<8) & empty;
         while (tuff){
             Square s= bitscanForward(tuff);
-            output.push_back(Move{s-8,s,"Q"});
-            output.push_back(Move{s-8, s, "B"});
-            output.push_back(Move{s-8, s, "R"});
-            output.push_back(Move{s-8, s, "N"});
+            output.push_back(Move{s-8,s,"Q",0});
+            output.push_back(Move{s-8, s, "B",0});
+            output.push_back(Move{s-8, s, "R",0});
+            output.push_back(Move{s-8, s, "N",0});
             tuff=lsbReset(tuff);
         }
         //for attacks
         tuff =((state.white_pawns & not_a_file)<<9) & state.blackpieces();
         while(tuff){
             Square s = bitscanForward(tuff);
-            output.push_back(Move{s-9, s, ""});
+            output.push_back(Move{s-9, s, "",0});
             tuff = lsbReset(tuff);
         }
         tuff =((state.white_pawns & not_h_file)<<7) & state.blackpieces();
         while(tuff){
             Square s = bitscanForward(tuff);
-            output.push_back(Move{ s-7, s, ""});
+            output.push_back(Move{ s-7, s, "",0});
             tuff = lsbReset(tuff);
         }
         //legal moves of knights
-        //up or down moves first
-        tuff = ((state.white_knights & not_a_file))&occupied;
+        tuff = state.white_knights ;
+        while(tuff){
+            Square s = bitscanForward(tuff);
+            U64 temp = knightAttacks[s] & empty_or_black;
+            while(temp){
+                Square k = bitscanForward(temp);
+                output.push_back(Move{s, k, "", 1});
+                temp = lsbReset(temp);
+            }
+            tuff=lsbReset(tuff);
+        }
+        //all king moves 
+        tuff = state.white_king;
+        while(tuff){
+            Square s = bitscanForward(tuff);
+            U64 temp = kingAttacks[s] & empty_or_black;
+            while(temp){
+                Square k = bitscanForward(temp);
+                output.push_back(Move{s, k, "", 5});
+                temp = lsbReset(temp);
+            }
+            tuff=lsbReset(tuff);
+        }
 
     }
     if (state.turn){
@@ -161,9 +141,10 @@ vector<Move> getLegal(board state){
     return output;
 }
 board make_move(board state, Move move2){
-    uint64_t target = 1ULL << (move2.from);
-    uint64_t antitarget = ~target;
-    uint64_t fin = 1ULL << (move2.to);
+    U64 target = 1ULL << (move2.from);
+    U64 antitarget = ~target;
+    U64 fin = 1ULL << (move2.to);
+    state.turn= !state.turn;
     vector<Move> LEGALMOVES = getLegal(state);
     bool a=0;
     for (Move move1:LEGALMOVES){
@@ -173,51 +154,51 @@ board make_move(board state, Move move2){
     }
     if (a) cout<<"LEGAL MOVE"<<endl;
     else cout<<"ILLEGAL MOVE"<<endl;
-    if (state.white_pawns & target) {
+    if (move2.piecetype ==0) {
         state.white_pawns &= antitarget;
         state.white_pawns |= fin;
     }
-    if (state.white_knights & target) {
+    if (move2.piecetype ==1) {
         state.white_knights &= antitarget;
         state.white_knights |= fin;
     }
-    if (state.white_bishops & target) {
+    if (move2.piecetype ==2) {
         state.white_bishops &= antitarget;
         state.white_bishops |= fin;
     }
-    if (state.white_rooks & target) {
+    if (move2.piecetype ==3) {
         state.white_rooks &= antitarget;
         state.white_rooks |= fin;
     }
-    if (state.white_queen & target) {
+    if (move2.piecetype ==4) {
         state.white_queen &= antitarget;
         state.white_queen |= fin;
     }
-    if (state.white_king & target) {
+    if (move2.piecetype ==5) {
         state.white_king &= antitarget;
         state.white_king |= fin;
     }
-    if (state.black_pawns & target) {
+    if (move2.piecetype ==6) {
         state.black_pawns &= antitarget;
         state.black_pawns |= fin;
     }
-    if (state.black_knights & target) {
+    if (move2.piecetype ==7) {
         state.black_knights &= antitarget;
         state.black_knights |= fin;
     }
-    if (state.black_bishops & target) {
+    if (move2.piecetype ==8) {
         state.black_bishops &= antitarget;
         state.black_bishops |= fin;
     }
-    if (state.black_rooks & target) {
+    if (move2.piecetype ==9) {
         state.black_rooks &= antitarget;
         state.black_rooks |= fin;
     }
-    if (state.black_queen & target) {
+    if (move2.piecetype ==10) {
         state.black_queen &= antitarget;
         state.black_queen |= fin;
     }
-    if (state.black_king & target) {
+    if (move2.piecetype ==11) {
         state.black_king &= antitarget;
         state.black_king |= fin;
     }
@@ -226,15 +207,12 @@ board make_move(board state, Move move2){
 };
 void printlegal(vector<Move> MOVESVECT){
     for (int i=0;i<int(MOVESVECT.size());i++){
-        cout<<mintspace[MOVESVECT[i].from]<<mintspace[MOVESVECT[i].to]<<MOVESVECT[i].promotion<<endl;
+        cout<<MOVESVECT[i].piecetype<<mintspace[MOVESVECT[i].from]<<mintspace[MOVESVECT[i].to]<<MOVESVECT[i].promotion<<endl;
     }
+    cout<<'\n';
 }
 
 
 int main(){
-    board tuffboard = initstate();
-    printlegal(getLegal(tuffboard));
-    cout<<'\n';
-    
-    printlegal(getLegal(make_move(tuffboard, Move{mspaceint["e2"],mspaceint["e4"],""})));
+   //nothing for now
 }
